@@ -50,6 +50,46 @@ def one_ped_step(ped_data, ped_idx, act_t, act_vx, act_vy, const):
     return ped_data
 
 
+def f_motivation(ped_data, ped_idx, const):
+    
+    sx =  (const['attractor_x'] - ped_data.x[ped_idx][-1]) / math.sqrt(
+            (ped_data.x[ped_idx][-1] - const['attractor_x'])**2 
+             + (ped_data.y[ped_idx][-1] - const['attractor_y'])**2)
+    sy =  (const['attractor_y'] - ped_data.y[ped_idx][-1]) / math.sqrt(
+             (ped_data.x[ped_idx][-1] - const['attractor_x'])**2 
+             + (ped_data.y[ped_idx][-1] - const['attractor_y'])**2)
+                
+    fx = (const['v_opt']*sx - ped_data.vx[ped_idx][-1])/const['tau']
+    fy = (const['v_opt']*sy - ped_data.vy[ped_idx][-1])/const['tau']
+
+    return fx, fy
+
+
+def f_ped_rep(ped_data, ped_idx, other_idx, const):
+    
+    if ped_idx == other_idx:
+        fx = 0
+        fy = 0
+    else:
+    
+        d = math.sqrt((ped_data.x[ped_idx][-1] - ped_data.x[other_idx][-1])**2
+                          + (ped_data.y[ped_idx][-1] - ped_data.y[other_idx][-1])**2)
+        U = const['U0']/const['distance_scale'] * math.exp(-1*d/const['distance_scale'])
+        
+        sx =  (ped_data.x[other_idx][-1] - ped_data.x[ped_idx][-1]) / math.sqrt(
+                (ped_data.x[ped_idx][-1] - ped_data.x[other_idx][-1])**2 
+                + (ped_data.y[ped_idx][-1] - ped_data.y[other_idx][-1])**2)
+        
+        sy =  (ped_data.y[other_idx][-1] - ped_data.y[ped_idx][-1]) / math.sqrt(
+                (ped_data.x[ped_idx][-1] - ped_data.x[other_idx][-1])**2 
+                + (ped_data.y[ped_idx][-1] - ped_data.y[other_idx][-1])**2)
+
+        fx = U*sx   
+        fy = U*sy 
+
+    return fx, fy
+
+
 def update_v(ped_data, ped_idx, model_name, const):
     # With respect to the model and situation, new velocity is calculated here
     
@@ -57,8 +97,27 @@ def update_v(ped_data, ped_idx, model_name, const):
         new_vx = ped_data.vx[ped_idx][-1]
         new_vy = ped_data.vy[ped_idx][-1]
         
- #   elif model_name == 'xxx':
+    elif model_name == 'motivation_only':
+        fx, fy = f_motivation(ped_data, ped_idx, const)
+        new_vx = ped_data.vx[ped_idx][-1] + fx*const['dt']
+        new_vy = ped_data.vy[ped_idx][-1] + fy*const['dt']
+        
+    elif model_name == 'motivation_interaction':    
+        
+        fxa, fya = f_motivation(ped_data, ped_idx, const)
+        
+        fx0, fy0 = f_ped_rep(ped_data, ped_idx, 0, const)
+        fx1, fy1 = f_ped_rep(ped_data, ped_idx, 1, const)
+        fx2, fy2 = f_ped_rep(ped_data, ped_idx, 2, const)
+        fx3, fy3 = f_ped_rep(ped_data, ped_idx, 3, const)
+        fx4, fy4 = f_ped_rep(ped_data, ped_idx, 4, const)
        
+        fx = fxa - fx0 - fx1 - fx2 - fx3 - fx4
+        fy = fya - fy0 - fy1 - fy2 - fy3 - fy4
+  
+        new_vx = ped_data.vx[ped_idx][-1] + fx*const['dt']
+        new_vy = ped_data.vy[ped_idx][-1] + fy*const['dt']
+        
     else:
         new_vx = np.nan
         new_vy = np.nan
@@ -76,8 +135,12 @@ def update_v(ped_data, ped_idx, model_name, const):
 
 # Constants - dictionary
 const = {'N_ped': 5,                # numer of peds in the system
-         'N_step': 10,              # number of steps
+         'N_step': 100,              # number of steps
          'dt': 0.1,                 # diffrential step length [s]
+         'v_opt': 3,                # optimal velocity (scalar) [m/s]
+         'tau': 4,
+         'U0': 1,
+         'distance_scale':1,         
          'attractor_x': 10,         # x position of attractor [m]
          'attractor_y': 5           # y position of attractor [m]
         }
@@ -108,7 +171,7 @@ for i in rep:
     rep2 = range(const['N_ped'])
     for j in rep2: 
     
-        act_vx, act_vy = update_v(ped_data, j, 'no_change', const)
+        act_vx, act_vy = update_v(ped_data, j, 'motivation_interaction', const)
         ped_data = one_ped_step(ped_data, j, act_t, act_vx, act_vy, const)
     
 
@@ -135,6 +198,7 @@ plt.show()
 
 # Aerial plot
 plt.figure()
+plt.plot(const['attractor_x'], const['attractor_y'], 'r*', label = 'ped 1')
 plt.plot(ped_data.x[0], ped_data.y[0], 'r-o', label = 'ped 1')
 plt.plot(ped_data.x[1], ped_data.y[1], 'g-o', label = 'ped 2')
 plt.plot(ped_data.x[2], ped_data.y[2], 'b-o', label = 'ped 3')
@@ -148,4 +212,18 @@ plt.ylabel(r'$y \,\,\, \mathrm{[m]}$')
 plt.legend()
 plt.show()
 
+# Timespace fundamental diagram
+plt.figure()
+plt.plot(ped_data.t[0], ped_data.x[0], 'r-', label = 'ped 1')
+plt.plot(ped_data.t[1], ped_data.x[1], 'g-', label = 'ped 2')
+plt.plot(ped_data.t[2], ped_data.x[2], 'b-', label = 'ped 3')
+plt.plot(ped_data.t[3], ped_data.x[3], 'k-', label = 'ped 4')
+plt.plot(ped_data.t[4], ped_data.x[4], 'm-', label = 'ped 5')
+plt.title('Timespace fundamental diagram')
+plt.xlabel(r'$t \,\,\mathrm{[s]}$')
+plt.ylabel(r'$x \,\,\, \mathrm{[m]}$')
+#plt.xlim(0, 10)
+#plt.ylim(0, 120)
+plt.legend()
+plt.show()
 
