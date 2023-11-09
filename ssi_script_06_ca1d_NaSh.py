@@ -48,7 +48,6 @@ def one_ped_step(ped_data, ped_idx, act_t, act_vx, act_vy, const):
     return ped_data
 
 
-
 def update_v(ped_data, ped_idx, model_name, const):
     # With respect to the model and situation, new velocity is calculated here
     
