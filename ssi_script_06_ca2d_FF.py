@@ -6,27 +6,35 @@ from matplotlib import pyplot as plt
 
 pd.options.mode.chained_assignment = None  # default='warn' # to supress "A value is trying to be set on a copy of a slice from a DataFrame"
 
-def init_ped_data(t,x,y):
+def init_ped_data(t,x,y,ks,ko):
     # initialize ped data container
     # INPUT: vector of init time, init positions
     
     # init dataframe with the first ped
     ped_data = pd.DataFrame({'ped_id': 0,
-                             't': [[t[0]]],                        # to be list of recorded time
-                             'x': [[x[0]]],                        # to be list of recorded x position
+                             'ks': ks[0],
+                             'ko': ko[0],
+                             't': [[t[0]]],                         # to be list of recorded time
+                             'x': [[x[0]]],                         # to be list of recorded x position
                              'y': [[y[0]]],                         # to be list of recorded y position
                              'dec_x': np.nan,
-                             'dec_y': np.nan
+                             'dec_y': np.nan,
+                             'exit_time': np.nan                    
                              }, index = [0])
 
     # add peds one by one
     rep = range(len(x)-1)
     for i in rep:
         ped_data_n = pd.DataFrame({'ped_id': i+1,
-                                't': [[t[i+1]]],                         
-                                'x': [[x[i+1]]],   
-                                'y': [[y[i+1]]],      
-                                }, index = [i+1])
+                                   'ks': ks[i],
+                                   'ko': ko[i],
+                                   't': [[t[i+1]]],                         
+                                   'x': [[x[i+1]]],   
+                                   'y': [[y[i+1]]],   
+                                   'dec_x': np.nan,
+                                   'dec_y': np.nan,
+                                   'exit_time': np.nan 
+                                   }, index = [i+1])
         ped_data = ped_data.append(ped_data_n)
     
     return ped_data
@@ -34,39 +42,62 @@ def init_ped_data(t,x,y):
 
 def one_ped_decision(ped_data, ped_idx, distance_grid, const):
        
+    act_x = ped_data.x[ped_idx][-1]
+    act_y = ped_data.y[ped_idx][-1]
+    
+    ko = ped_data.ko[ped_idx]
+    ks = ped_data.ks[ped_idx]
+    
     # get profitability
-    dist_u = distance_grid[ped_data.x[ped_idx][-1]-1][ped_data.y[ped_idx][-1]]                  
-    dist_d = distance_grid[ped_data.x[ped_idx][-1]+1][ped_data.y[ped_idx][-1]]  
-    dist_l = distance_grid[ped_data.x[ped_idx][-1]][ped_data.y[ped_idx][-1]-1]
-    dist_r = distance_grid[ped_data.x[ped_idx][-1]][ped_data.y[ped_idx][-1]+1]
+    dist_0 = distance_grid[act_x][act_y]
+    dist_u = distance_grid[act_x-1][act_y]                  
+    dist_d = distance_grid[act_x+1][act_y]  
+    dist_l = distance_grid[act_x][act_y-1]
+    dist_r = distance_grid[act_x][act_y+1]
+    
+    # get occuapncy
+    o_u = int(pd.isna(cell_guest(ped_data,[act_x-1],[act_y])) == False)
+    o_d = int(pd.isna(cell_guest(ped_data,[act_x+1],[act_y])) == False)
+    o_l = int(pd.isna(cell_guest(ped_data,[act_x],[act_y-1])) == False)
+    o_r = int(pd.isna(cell_guest(ped_data,[act_x],[act_y+1])) == False)
     
     # calculate probability
-    p_norm = np.exp(-1*dist_u) + np.exp(-1*dist_d) + np.exp(-1*dist_l) + np.exp(-1*dist_r)      
-    p_u = np.exp(-1*dist_u)/p_norm
-    p_d = np.exp(-1*dist_d)/p_norm
-    p_l = np.exp(-1*dist_l)/p_norm
-#    p_r = np.exp(-1*dist_r)/p_norm
+    p_norm = np.exp(-1*ks*dist_0) + \
+                (1-o_u*ko)*np.exp(-1*ks*dist_u) + \
+                (1-o_d*ko)*np.exp(-1*ks*dist_d) + \
+                (1-o_l*ko)*np.exp(-1*ks*dist_l) + \
+                (1-o_r*ko)*np.exp(-1*ks*dist_r)    
+    
+    p_0 = np.exp(-1*ks*dist_0)/p_norm
+    p_u = (1-o_u*ko)*np.exp(-1*ks*dist_u)/p_norm
+    p_d = (1-o_d*ko)*np.exp(-1*ks*dist_d)/p_norm
+    p_l = (1-o_l*ko)*np.exp(-1*ks*dist_l)/p_norm
+#    p_r = (1-o_r*ko)*np.exp(-1*ks*dist_r)/p_norm
     
     # distribution function
-    cum_p_u = p_u                                                                               
+    cum_p_0 = p_0   
+    cum_p_u = p_u + cum_p_0                                                                            
     cum_p_d = p_d + cum_p_u
     cum_p_l = p_l + cum_p_d
 #    cum_p_r = p_r + cum_p_l
     
     r = rn.random()
     
-    if r < cum_p_u:
-        ped_data.dec_x[ped_idx] = ped_data.x[ped_idx][-1] -1
-        ped_data.dec_y[ped_idx] = ped_data.y[ped_idx][-1]
+    if r < cum_p_0:
+        ped_data.dec_x[ped_idx] = np.nan      # it is already there, but for better immage ..
+        ped_data.dec_y[ped_idx] = np.nan
+    elif r < cum_p_u:
+        ped_data.dec_x[ped_idx] = act_x -1
+        ped_data.dec_y[ped_idx] = act_y
     elif r < cum_p_d:
-        ped_data.dec_x[ped_idx] = ped_data.x[ped_idx][-1] +1
-        ped_data.dec_y[ped_idx] = ped_data.y[ped_idx][-1]
+        ped_data.dec_x[ped_idx] = act_x +1
+        ped_data.dec_y[ped_idx] = act_y
     elif r < cum_p_l:
-        ped_data.dec_x[ped_idx] = ped_data.x[ped_idx][-1]
-        ped_data.dec_y[ped_idx] = ped_data.y[ped_idx][-1] -1
+        ped_data.dec_x[ped_idx] = act_x
+        ped_data.dec_y[ped_idx] = act_y -1
     else:
-        ped_data.dec_x[ped_idx] = ped_data.x[ped_idx][-1]
-        ped_data.dec_y[ped_idx] = ped_data.y[ped_idx][-1] +1
+        ped_data.dec_x[ped_idx] = act_x
+        ped_data.dec_y[ped_idx] = act_y +1
     
     return ped_data 
 
@@ -114,7 +145,7 @@ def cell_guest(ped_data, x, y):
     
     ped_id = np.nan
 
-    rep_k = range(const['N_ped']-1)                                    
+    rep_k = range(const['N_ped'])                                    
     for k in rep_k:
         
         if (ped_data.x[k][-1] == x) & (ped_data.y[k][-1] == y):
@@ -151,7 +182,7 @@ def execute_all_steps(ped_data, const, act_t):
                 print('     Ped ' + str(peds_to_move[k]) + ' moved')
             
             elif pd.isna(ped_data.dec_x[blocking_ped]):                # Blocking ped will not move this time step -> No chance to move this time step                         
-                ped_data = save_step(ped_data, peds_to_move[k], ped_data.dec_x[peds_to_move[k]], ped_data.dec_y[peds_to_move[k]], act_t)   # Make "stay" step
+                ped_data = save_step(ped_data, peds_to_move[k], ped_data.x[peds_to_move[k]][-1], ped_data.y[peds_to_move[k]][-1], act_t)   # Make "stay" step
                 
                 print('     Ped ' + str(peds_to_move[k]) + ' blocked')
                 
@@ -161,6 +192,19 @@ def execute_all_steps(ped_data, const, act_t):
     return ped_data 
     
 
+def execute_exit(ped_data, const, act_t):
+    
+    ped_exit = cell_guest(ped_data, const['attractor_x'], const['attractor_y'])
+    
+    if not pd.isna(ped_exit):     
+    
+        ped_data = save_step(ped_data, ped_exit, -1, -1, act_t)
+        ped_data.exit_time[ped_exit] = act_t
+        print('     Ped ' + str(ped_exit) + ' left')
+    
+    return ped_data
+    
+    
 
 
 #============================================#
@@ -177,17 +221,21 @@ const = {'N_ped': 5,                # numer of peds in the system
          'grid_size_x': 4,          # number of rows
          'grid_size_y': 5,
          'dt': 1,                   # time step length [s]
-         'attractor_x': 4,         # x position of attractor [cell]
-         'attractor_y': 2           # y position of attractor [cell]
+         'attractor_x': 4,          # x position of attractor [cell]
+         'attractor_y': 2,          # y position of attractor [cell]
+         'ks': 5,                   # sensitivity to potential
+         'ko': 1                    # sensitivity to occupancy
         }
 
 # Init time, positions and velocities
-t =  [0,  0, 0, 0, 0]
+t =  [0, 0, 0, 0, 0]
 x =  [4, 3, 1, 2, 2]
 y =  [1, 2, 2, 1, 4]
+ks = const['ks']*np.array([1, 1, 1, 1, 1])
+ko = const['ko']*np.array([1, 1, 1, 1, 1])
 
 # Init data containers
-ped_data = init_ped_data(t,x,y)
+ped_data = init_ped_data(t,x,y,ks,ko)
 
 distance_grid = [[np.inf,  np.inf, np.inf, np.inf, np.inf, np.inf, np.inf],
                  [np.inf,       4,      3,      4,      5,      6, np.inf], 
@@ -207,13 +255,17 @@ for i in rep:
 
     print(' Step ' + str(i) + ' out of ' + str(const['N_step']) + ' started')    
 
-    act_t = (i+1)*const['dt']                                       # i+1 is current itteration as i = 0  was defined in init step 
+    act_t = (i+1)*const['dt']                    # i+1 is current itteration as i = 0  was defined in init step 
+    
+    ped_data = execute_exit(ped_data, const, act_t)
     
     # model desision loop over all peds 
     print('   Decision started')
     rep2 = range(const['N_ped'])
     for j in rep2: 
-        ped_data = one_ped_decision(ped_data, j, distance_grid, const)    
+        
+        if pd.isna(ped_data.exit_time[j]): 
+            ped_data = one_ped_decision(ped_data, j, distance_grid, const)    
     
     # conflict resolution
     ped_data = resolve_conflicts(ped_data, const, act_t)
