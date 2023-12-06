@@ -26,7 +26,7 @@ def get_new_pozition(positions):
     
     x = positions_new[r]
     x = x + step
-    x = x % 1                       # modulo 1 to stay in unit circle
+    x = x % 1                           # modulo 1 to stay in unit circle
     
     positions_new[r] = x 
     
@@ -54,7 +54,7 @@ def make_decision(positions, positions_new, beta):
 
 iter_cnt = 1000
 
-beta = 1   # to accept only lower energy 10000
+beta = 3   # to accept only lower energy 10000
 
 positions = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
 
@@ -77,3 +77,6 @@ for i in range(iter_cnt):
 
 
 plt.scatter(list(range(len(energy_record))), energy_record, s=100, c=energy_accepted)
+plt.grid()
+plt.show()
+
