@@ -13,6 +13,7 @@ frameFullFinal = spio.loadmat('frameFullFinal.mat', struct_as_record=False, sque
 ped_frames = pd.DataFrame({'t': 0,                              # to experiment time within each round
                            'x': [0],                            # to be list of recorded x-positions
                            'y': [0],                            # to be list of recorded y-positions
+                           'ped_id': [0],                       # to be list of recorded pedestrian ids
                            'r': 0                               # to experiment round id
                          }, index = [0])
 
@@ -25,14 +26,15 @@ for i in rep:
         
     ped_frames_n = pd.DataFrame({'t': frameFullFinal['frameStruct'][i].t,                           
                                'x': [frameFullFinal['frameStruct'][i].x],                        
-                               'y': [frameFullFinal['frameStruct'][i].y],                         
+                               'y': [frameFullFinal['frameStruct'][i].y],    
+                               'ped_id': [frameFullFinal['frameStruct'][i].ID],
                                'r': frameFullFinal['frameStruct'][i].round
                              }, index = [i])  
     ped_frames = pd.concat([ped_frames, ped_frames_n])
 
 
 # Examples
-p = plt.plot(ped_frames.x[10489], ped_frames.y[10489])
+p = plt.plot(ped_frames.x[10489], ped_frames.y[10489],'bo')
 
 # Save to pickle
 ped_frames.to_pickle('ped_frames.pkl')
