@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-#import math as math
+import math as math
 from matplotlib import pyplot as plt 
 
 pd.options.mode.chained_assignment = None  # default='warn'
@@ -53,6 +53,29 @@ def update_v(car_data, car_idx, model_name, const):
     elif model_name == 'FLM':
         f = (car_data.v[car_idx-1][-2] - car_data.v[car_idx][-1])/const['t_safe']   # previous car has been updated, thus we need second last value [-2]
         new_v = car_data.v[car_idx][-1] + f*const['dt']
+        
+    elif model_name == 'OVM_hyp':
+        dx = car_data.x[car_idx-1][-2] - car_data.x[car_idx][-1]
+        v_opt_loc = 0.5*const['v_opt']*(math.tanh(dx-const['d_safe']) + math.tanh(const['d_safe']))
+        f = (v_opt_loc - car_data.v[car_idx][-1])/const['t_safe']
+        new_v = car_data.v[car_idx][-1] + f*const['dt']
+        
+    elif model_name == 'IDM':
+        dx = car_data.x[car_idx-1][-2] - car_data.x[car_idx][-1]
+        dv = car_data.v[car_idx-1][-2] - car_data.v[car_idx][-1]
+        
+        d_star = max(0, const['d_safe'] 
+                         + car_data.v[car_idx][-1]*const['t_safe'] 
+                         - car_data.v[car_idx][-1]*dv / (2*math.sqrt(const['idm_a']*const['idm_b'])) 
+        )
+        
+        f = const['idm_a']*(1 - math.pow(car_data.v[car_idx][-1]/const['v_opt'], const['idm_delta']) - math.pow(d_star/dx,2))
+        
+        new_v = car_data.v[car_idx][-1] + f*const['dt']    
+        
+        
+        
+        
         
     else:
         new_v = np.nan
@@ -108,7 +131,7 @@ for i in rep:
     rep2 = range(const['N_car'] - 1)
     for j in rep2: 
     
-        act_v = update_v(car_data, j+1, 'FLM', const)
+        act_v = update_v(car_data, j+1, 'IDM', const)
         car_data = one_car_step(car_data, j+1, act_t, act_v, const)
     
 
