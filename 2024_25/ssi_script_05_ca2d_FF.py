@@ -1,0 +1,220 @@
+import pandas as pd
+import numpy as np
+import math as math
+import random as rn
+from matplotlib import pyplot as plt 
+
+pd.options.mode.chained_assignment = None  # default='warn' # to supress "A value is trying to be set on a copy of a slice from a DataFrame"
+
+def init_ped_data(t,x,y):
+    # initialize ped data container
+    # INPUT: vector of init time, init positions
+    
+    # init dataframe with the first ped
+    ped_data = pd.DataFrame({'ped_id': 0,
+                             't': [[t[0]]],                         # to be list of recorded time
+                             'x': [[x[0]]],                         # to be list of recorded x position
+                             'y': [[y[0]]],                         # to be list of recorded y position
+                             'dec_x': np.nan,
+                             'dec_y': np.nan,
+                             'exit_time': np.nan                    
+                             }, index = [0])
+
+    # add peds one by one
+    rep = range(len(x)-1)
+    for i in rep:
+        ped_data_n = pd.DataFrame({'ped_id': i+1,
+                                   't': [[t[i+1]]],                         
+                                   'x': [[x[i+1]]],   
+                                   'y': [[y[i+1]]],   
+                                   'dec_x': np.nan,
+                                   'dec_y': np.nan,
+                                   'exit_time': np.nan 
+                                   }, index = [i+1])
+        ped_data = pd.concat([ped_data,ped_data_n])
+    
+    return ped_data
+
+
+def one_ped_decision(ped_data, ped_idx, distance_grid, const):
+       
+    # Trivial approach - pedestrian will stay where he is now
+    
+    act_x = ped_data.x[ped_idx][-1]
+    act_y = ped_data.y[ped_idx][-1]
+
+    ped_data.dec_x[ped_idx] = act_x 
+    ped_data.dec_y[ped_idx] = act_y
+    
+    return ped_data 
+
+
+def save_step(ped_data, ped_id, new_x, new_y, new_t):
+    
+    ped_data.dec_x[ped_id] = np.nan
+    ped_data.dec_y[ped_id] = np.nan    
+    ped_data.x[ped_id] = ped_data.x[ped_id] + [int(new_x)]
+    ped_data.y[ped_id] = ped_data.y[ped_id] + [int(new_y)]
+    ped_data.t[ped_id] = ped_data.t[ped_id] + [new_t]
+    
+    return ped_data
+
+
+def resolve_conflicts(ped_data, const, act_t):
+    
+    print('   Conflict resolution started')
+            
+                   # For all cells
+            
+                   # Initiate empty "waiting room"
+                    
+                   # For all peds
+                  
+                   # Check whether they want to enther this cell 
+                       # If so, they are written to waiting list    
+                    
+                   # If waiting room is occupied by more than 2 peds
+                       # Pick one randomly to keep his decision
+                               
+                     
+                   # Others will change they mind and stay at their positions
+                          
+                   # Make "stay" step
+       
+    return ped_data    
+
+    
+def cell_guest(ped_data, x, y):
+    # Return id of ped that sit in cell (x,y)
+    
+    ped_id = np.nan
+    
+    return ped_id
+   
+    
+def execute_all_steps(ped_data, const, act_t):
+# Move pedestrians to cell they picked, if it is empty    
+# Kind of smart logic to resolve the situation when the selected cell is occupied but the blocker ped would move
+# I.e. logic here enables the decision algorithm to pick occupied cell      
+    
+    print('   Movement started')
+
+    # TO DO ..
+            
+    return ped_data 
+    
+
+def execute_exit(ped_data, const, act_t):
+    
+    ped_exit = cell_guest(ped_data, const['attractor_x'], const['attractor_y'])
+    
+    if not pd.isna(ped_exit):     
+    
+        ped_data = save_step(ped_data, ped_exit, -1, -1, act_t)
+        ped_data.exit_time[ped_exit] = act_t
+        print('     Ped ' + str(ped_exit) + ' left')
+    
+    return ped_data
+    
+    
+
+
+#============================================#
+#              SCRIPT STARTS HERE            #
+#============================================#
+
+#======================#
+#     PRELIMINARIES    #
+#======================#
+
+# Constants - dictionary
+const = {'N_ped': 5,                # numer of peds in the system
+         'N_step': 10,              # number of steps
+         'grid_size_x': 4,          # number of rows
+         'grid_size_y': 5,
+         'dt': 1,                   # time step length [s]
+         'attractor_x': 4,          # x position of attractor [cell]
+         'attractor_y': 2          # y position of attractor [cell]
+        }
+
+# Init time, positions and velocities
+t =  [0, 0, 0, 0, 0]
+x =  [4, 3, 1, 2, 2]
+y =  [1, 2, 2, 1, 4]
+
+# Init data containers
+ped_data = init_ped_data(t,x,y)
+
+distance_grid = [[np.inf,  np.inf, np.inf, np.inf, np.inf, np.inf, np.inf],
+                 [np.inf,       4,      3,      4,      5,      6, np.inf], 
+                 [np.inf,       3,      2,      3,      4,      5, np.inf], 
+                 [np.inf,       2,      1,      2,      3,      4, np.inf], 
+                 [np.inf,       1,      0,      1,      2,      3, np.inf],
+                 [np.inf,  np.inf, np.inf, np.inf, np.inf, np.inf, np.inf]]
+
+
+#======================#
+#         MODEL        #
+#======================#
+
+# Model loop over time
+rep = range(const['N_step'])
+for i in rep: 
+
+    print(' Step ' + str(i) + ' out of ' + str(const['N_step']) + ' started')    
+
+    act_t = (i+1)*const['dt']                    # i+1 is current itteration as i = 0  was defined in init step 
+    
+    ped_data = execute_exit(ped_data, const, act_t)
+    
+    # model desision loop over all peds 
+    print('   Decision started')
+    rep2 = range(const['N_ped'])
+    for j in rep2: 
+        
+        if pd.isna(ped_data.exit_time[j]): 
+            ped_data = one_ped_decision(ped_data, j, distance_grid, const)    
+    
+    # conflict resolution
+    ped_data = resolve_conflicts(ped_data, const, act_t)
+    
+    # model movement loop over all peds 
+    ped_data = execute_all_steps(ped_data, const, act_t)
+    
+
+#======================#
+#     POSTPROCESSING   #
+#======================#
+
+
+# Timespace fundamental diagram
+plt.figure()
+plt.plot(ped_data.t[0], ped_data.x[0], 'r-o', label = 'ped 1')
+plt.plot(ped_data.t[1], ped_data.x[1], 'g-o', label = 'ped 2')
+plt.plot(ped_data.t[2], ped_data.x[2], 'b-o', label = 'ped 3')
+plt.plot(ped_data.t[3], ped_data.x[3], 'k-o', label = 'ped 4')
+plt.plot(ped_data.t[4], ped_data.x[4], 'm-o', label = 'ped 5')
+plt.title('Timespace fundamental diagram')
+plt.xlabel(r'$t \,\,\mathrm{[s]}$')
+plt.ylabel(r'$x \,\,\, \mathrm{[m]}$')
+#plt.xlim(0, 10)
+#plt.ylim(0, 120)
+plt.legend()
+plt.show()
+
+# Aerial plot
+plt.figure()
+plt.plot(const['attractor_x'], const['attractor_y'], 'r*', label = 'ped 1')
+plt.plot(ped_data.x[0], ped_data.y[0], 'r-o', label = 'ped 1')
+plt.plot(ped_data.x[1], ped_data.y[1], 'g-o', label = 'ped 2')
+plt.plot(ped_data.x[2], ped_data.y[2], 'b-o', label = 'ped 3')
+plt.plot(ped_data.x[3], ped_data.y[3], 'k-o', label = 'ped 4')
+plt.plot(ped_data.x[4], ped_data.y[4], 'm-o', label = 'ped 5')
+plt.title('Aerial plot')
+plt.xlabel(r'$x \,\,\mathrm{[m]}$')
+plt.ylabel(r'$y \,\,\, \mathrm{[m]}$')
+#plt.xlim(0, 10)
+#plt.ylim(0, 120)
+plt.legend()
+plt.show()
+
