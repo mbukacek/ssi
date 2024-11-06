@@ -1,9 +1,12 @@
 import pandas as pd
 import numpy as np
 import math as math
+import random as rn
 from matplotlib import pyplot as plt 
 
-def init_car_data(t,x,y,vx,vy):
+pd.options.mode.chained_assignment = None  # default='warn'
+
+def init_car_data(t,x,vx):
     # initialize car data container
     # INPUT: vector of init time, init position and init velocity
     
@@ -11,9 +14,7 @@ def init_car_data(t,x,y,vx,vy):
     car_data = pd.DataFrame({'ped_id': 0,
                              't': [[t[0]]],                         # to be list of recorded time
                              'x': [[x[0]]],                         # to be list of recorded x position
-                             'y': [[y[0]]],                         # to be list of recorded y position
                              'vx': [[vx[0]]],                       # to be list of recorded x velocity
-                             'vy': [[vy[0]]]                        # to be list of recorded y velocity
                              }, index = [0])
 
     # add peds one by one
@@ -21,29 +22,23 @@ def init_car_data(t,x,y,vx,vy):
     for i in rep:
         car_data_n = pd.DataFrame({'ped_id': i+1,
                                 't': [[t[i+1]]],                         
-                                'x': [[x[i+1]]],   
-                                'y': [[y[i+1]]],      
+                                'x': [[x[i+1]]],         
                                 'vx': [[vx[i+1]]],
-                                'vy': [[vy[i+1]]]  
                                 }, index = [i+1])
         car_data = pd.concat([car_data,car_data_n])
     
     return car_data
 
 
-def one_car_step(car_data, ped_idx, act_t, act_vx, act_vy, const):
+def one_car_step(car_data, ped_idx, act_t, act_vx, const):
     # performs one step of one ped with respect to the new velocity
     
     car_data.t[ped_idx] = car_data.t[ped_idx] + [act_t]             # '+' works as append   
     
-    car_data.vx[ped_idx] = car_data.vx[ped_idx] + [act_vx]  
-    car_data.vy[ped_idx] = car_data.vy[ped_idx] + [act_vy]       
+    car_data.vx[ped_idx] = car_data.vx[ped_idx] + [act_vx]       
     
     new_x = car_data.x[ped_idx][-1] + act_vx*const['dt']             # [-1] reffers to the last value            
     car_data.x[ped_idx] = car_data.x[ped_idx] + [new_x]
-    
-    new_y = car_data.y[ped_idx][-1] + act_vy*const['dt']                         
-    car_data.y[ped_idx] = car_data.y[ped_idx] + [new_y]
     
     return car_data
 
@@ -51,11 +46,33 @@ def one_car_step(car_data, ped_idx, act_t, act_vx, act_vy, const):
 def update_v(car_data, ped_idx, model_name, const):
     # With respect to the model and situation, new velocity is calculated here
     
-    # TO improve ..
-    new_vx = np.nan
-    new_vy = np.nan
+    if model_name == '1D_NASH': 
     
-    return new_vx, new_vy
+        # acceleration
+        new_vx = car_data.vx[ped_idx][-1] + 1
+        # predecessor avoidance     
+        if ped_idx == 0:
+            x_space = 100
+        else:
+            x_space = car_data.x[ped_idx-1][-1] - car_data.x[ped_idx][-1]    # previous ped has been updated, i.e. made a space for our step 
+        if x_space <= new_vx:
+            new_vx = x_space - 1
+        # velocity limits  
+        if const['v_opt'] < new_vx:
+            new_vx = const['v_opt']
+        
+        # random deceleration 
+        r = rn.random()
+        if (new_vx > 0) & (r > 0.5):
+            new_vx = new_vx - 1
+            
+        if ped_idx == 0:    # první vozidlo slouží jako překážka
+             new_vx = 0    
+            
+    else:
+        new_vx = np.nan
+    
+    return new_vx
 
 
 #============================================#
@@ -69,22 +86,21 @@ def update_v(car_data, ped_idx, model_name, const):
 
 # Constants - dictionary
 const = {'N_ped': 5,                # numer of peds in the system
-         'N_step': 10,              # number of steps
+         'N_step': 30,              # number of steps
          'dt': 1,                   # time step length [s]
-         'v_opt': 3,                # optimal velocity (scalar) [cell/time_step]
+         'v_opt': 7,                # optimal velocity (scalar) [cell/time_step]
          'attractor_x': 10,         # x position of attractor [cell]
-         'attractor_y': 5           # y position of attractor [cell]
         }
 
 # Init time, positions and velocities
 t =  [0,  0, 0, 0, 0]
-x =  [12, 8, 6, 5, 1]
-y =  [5,  5, 5, 5, 5]
+x =  [50, 8, 6, 5, 1]
 vx = [0,  0, 0, 0, 0]
-vy = [0,  0, 0, 0, 0]
+
+rn.seed(42)
 
 # Init data containers
-car_data = init_car_data(t,x,y,vx,vy)
+car_data = init_car_data(t,x,vx)
 
 
 
@@ -102,14 +118,31 @@ for i in rep:
     rep2 = range(const['N_ped'])
     for j in rep2: 
     
-        act_vx, act_vy = update_v(car_data, j, '1D_NASH', const)
-        car_data = one_car_step(car_data, j, act_t, act_vx, act_vy, const)
+        act_vx = update_v(car_data, j, '1D_NASH', const)
+        car_data = one_car_step(car_data, j, act_t, act_vx, const)
     
 
 
 #======================#
 #     POSTPROCESSING   #
 #======================#
+
+
+# Analyze deceleration
+
+acceleration = pd.Series()
+
+rep = range(const['N_ped'])
+for j in rep:
+    acceleration = pd.concat([acceleration, pd.Series(car_data.vx[j]).diff(periods=1)])
+    
+acceleration = acceleration[acceleration.isna() == False]    
+    
+plt.figure()
+plt.hist(acceleration, bins=[-8.5, -7.5, -6.5, -5.5, -4.5, -3.5, -2.5, -1.5, -0.5, 0.5, 1.5])
+plt.title('max deceleration: ' + str(min(acceleration)))
+plt.show()
+
 
 
 # Timespace fundamental diagram
@@ -127,21 +160,6 @@ plt.ylabel(r'$x \,\,\, \mathrm{[m]}$')
 plt.legend()
 plt.show()
 
-# Aerial plot
-plt.figure()
-plt.plot(const['attractor_x'], const['attractor_y'], 'r*', label = 'ped 1')
-plt.plot(car_data.x[0], car_data.y[0], 'r-o', label = 'ped 1')
-plt.plot(car_data.x[1], car_data.y[1], 'g-o', label = 'ped 2')
-plt.plot(car_data.x[2], car_data.y[2], 'b-o', label = 'ped 3')
-plt.plot(car_data.x[3], car_data.y[3], 'k-o', label = 'ped 4')
-plt.plot(car_data.x[4], car_data.y[4], 'm-o', label = 'ped 5')
-plt.title('Aerial plot')
-plt.xlabel(r'$x \,\,\mathrm{[m]}$')
-plt.ylabel(r'$y \,\,\, \mathrm{[m]}$')
-#plt.xlim(0, 10)
-#plt.ylim(0, 120)
-plt.legend()
-plt.show()
 
 # velocity
 plt.figure()
