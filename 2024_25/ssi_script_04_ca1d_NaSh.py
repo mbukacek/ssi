@@ -43,30 +43,57 @@ def one_car_step(car_data, ped_idx, act_t, act_vx, const):
     return car_data
 
 
+def calc_break_distince(car_data, ped_idx, const):
+           
+    v_break = car_data.vx[ped_idx][-1] + 1    # +1 due to acceleration term in update step
+    
+    break_dist = 0
+    
+    while v_break > 0:
+        v_break = v_break - const['max_deceleration']
+        if v_break > 0:
+            break_dist = break_dist + v_break
+    
+    return break_dist
+
+
 def update_v(car_data, ped_idx, model_name, const):
     # With respect to the model and situation, new velocity is calculated here
     
     if model_name == '1D_NASH': 
     
         # acceleration
-        new_vx = car_data.vx[ped_idx][-1] + 1
-        # predecessor avoidance     
+        new_vx = car_data.vx[ped_idx][-1]
+        
+        # velocity limits & acceleration
+        if new_vx < const['v_opt']:
+            new_vx = new_vx + 1
+        
+        # predecessor avoidance  
+        
+        my_break_dist = calc_break_distince(car_data, ped_idx, const)
+        
         if ped_idx == 0:
-            x_space = 100
+            x_space = 1000
+            prev_break_dist = 0
         else:
             x_space = car_data.x[ped_idx-1][-1] - car_data.x[ped_idx][-1]    # previous ped has been updated, i.e. made a space for our step 
-        if x_space <= new_vx:
-            new_vx = x_space - 1
-        # velocity limits  
-        if const['v_opt'] < new_vx:
-            new_vx = const['v_opt']
+            prev_break_dist = calc_break_distince(car_data, ped_idx-1, const)
+            
+        dist_to_conflict = x_space + prev_break_dist - my_break_dist
+        
+        if dist_to_conflict <= new_vx:
+            new_vx = new_vx - const['max_deceleration']
+            if new_vx < 0:
+                new_vx = 0
         
         # random deceleration 
         r = rn.random()
         if (new_vx > 0) & (r > 0.5):
-            new_vx = new_vx - 1
+           new_vx = new_vx - 1
             
-        if ped_idx == 0:    # první vozidlo slouží jako překážka
+        # the first car used as the obstackle   
+        if ped_idx == 0:    
              new_vx = 0    
             
     else:
@@ -90,6 +117,7 @@ const = {'N_ped': 5,                # numer of peds in the system
          'dt': 1,                   # time step length [s]
          'v_opt': 7,                # optimal velocity (scalar) [cell/time_step]
          'attractor_x': 10,         # x position of attractor [cell]
+         'max_deceleration': 3      # maximal "desired" decelation  [cell/time_step/time_step]
         }
 
 # Init time, positions and velocities
