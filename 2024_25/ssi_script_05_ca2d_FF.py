@@ -65,6 +65,17 @@ def one_ped_decision(ped_data, ped_idx, distance_grid, const):
     else:
         ped_data.dec_x[ped_idx] = act_x
         ped_data.dec_y[ped_idx] = act_y +1
+        
+    
+        # handle walls
+
+    if (ped_data.dec_x[ped_idx] == const['grid_size_x']+1) |  \
+        (ped_data.dec_y[ped_idx] == const['grid_size_y']+1) |   \
+        (ped_data.dec_x[ped_idx] == -1) |                       \
+        (ped_data.dec_y[ped_idx] == -1):
+    
+        ped_data.dec_x[ped_idx] = np.nan         
+        ped_data.dec_y[ped_idx] = np.nan
     
     return ped_data 
 
@@ -104,6 +115,7 @@ def resolve_conflicts(ped_data, const, act_t):
                 for p in rep_id:                                                # Others will change they mind and stay at their positions
                     if p != r:
                         ped_data = save_step(ped_data, ped_conf[p], ped_data.x[ped_conf[p]][-1], ped_data.y[ped_conf[p]][-1], act_t)  # Make "stay" step
+                        print('     Ped ' + str(ped_conf[p]) + ' blocked by conflict')
        
     return ped_data     
 
@@ -128,13 +140,33 @@ def execute_all_steps(ped_data, const, act_t):
     
     print('   Movement started')
 
-    peds_to_move = ped_data.ped_id[~ped_data.dec_x.isna()]   
-    peds_to_move.reset_index(inplace=True, drop=True)
- 
-    rep_k = range(len(peds_to_move))                                    # For all peds that may move
-    for k in rep_k:                                                     # Expecting the cell where they want move is empty !!!
-
-        ped_data = save_step(ped_data, peds_to_move[k], ped_data.dec_x[peds_to_move[k]], ped_data.dec_y[peds_to_move[k]], act_t)
+    peds_to_move = ped_data.ped_id[~ped_data.dec_x.isna()]                  # Initialy, chance to move is defined as True if at least one ped has decision
+    chance_to_move = len(peds_to_move) > 0
+    
+    while chance_to_move:                                                   # We may need more loops in case of complex blocking situation
+                                                                            # The loop will repeated if there was at least one move in previous one
+        chance_to_move = False          
+        peds_to_move = ped_data.ped_id[~ped_data.dec_x.isna()]   
+        peds_to_move.reset_index(inplace=True, drop=True)
+    
+        rep_k = range(len(peds_to_move))                                    # For all peds that may move
+        for k in rep_k:
+        
+            blocking_ped = cell_guest(ped_data, ped_data.dec_x[peds_to_move[k]], ped_data.dec_y[peds_to_move[k]])   # Who is in his desired cell
+        
+            if pd.isna(blocking_ped):                                                     # Noone is blocking
+                ped_data = save_step(ped_data, peds_to_move[k], ped_data.dec_x[peds_to_move[k]], ped_data.dec_y[peds_to_move[k]], act_t)  # Make step
+                
+                chance_to_move = True
+                print('     Ped ' + str(peds_to_move[k]) + ' moved')
+            
+            elif pd.isna(ped_data.dec_x[blocking_ped]):                # Blocking ped will not move this time step -> No chance to move this time step                         
+                ped_data = save_step(ped_data, peds_to_move[k], ped_data.x[peds_to_move[k]][-1], ped_data.y[peds_to_move[k]][-1], act_t)   # Make "stay" step
+                
+                print('     Ped ' + str(peds_to_move[k]) + ' blocked in queue')
+                
+            else:
+                print('     Ped ' + str(peds_to_move[k]) + ' blocker may move')
             
     return ped_data 
     
@@ -171,6 +203,8 @@ const = {'N_ped': 5,                # numer of peds in the system
          'attractor_x': 4,          # x position of attractor [cell]
          'attractor_y': 2          # y position of attractor [cell]
         }
+
+rn.seed(42)
 
 # Init time, positions and velocities
 t =  [0, 0, 0, 0, 0]
@@ -229,13 +263,28 @@ plt.plot(ped_data.t[1], ped_data.x[1], 'g-o', label = 'ped 2')
 plt.plot(ped_data.t[2], ped_data.x[2], 'b-o', label = 'ped 3')
 plt.plot(ped_data.t[3], ped_data.x[3], 'k-o', label = 'ped 4')
 plt.plot(ped_data.t[4], ped_data.x[4], 'm-o', label = 'ped 5')
-plt.title('Timespace fundamental diagram')
+plt.title('Timespace fundamental diagram "x"')
 plt.xlabel(r'$t \,\,\mathrm{[s]}$')
 plt.ylabel(r'$x \,\,\, \mathrm{[m]}$')
 #plt.xlim(0, 10)
 #plt.ylim(0, 120)
 plt.legend()
 plt.show()
+
+plt.figure()
+plt.plot(ped_data.t[0], ped_data.y[0], 'r-o', label = 'ped 1')
+plt.plot(ped_data.t[1], ped_data.y[1], 'g-o', label = 'ped 2')
+plt.plot(ped_data.t[2], ped_data.y[2], 'b-o', label = 'ped 3')
+plt.plot(ped_data.t[3], ped_data.y[3], 'k-o', label = 'ped 4')
+plt.plot(ped_data.t[4], ped_data.y[4], 'm-o', label = 'ped 5')
+plt.title('Timespace fundamental diagram "y"')
+plt.xlabel(r'$t \,\,\mathrm{[s]}$')
+plt.ylabel(r'$y \,\,\, \mathrm{[m]}$')
+#plt.xlim(0, 10)
+#plt.ylim(0, 120)
+plt.legend()
+plt.show()
+
 
 # Aerial plot
 plt.figure()

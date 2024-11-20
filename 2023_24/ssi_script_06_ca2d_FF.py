@@ -98,6 +98,9 @@ def one_ped_decision(ped_data, ped_idx, distance_grid, const):
     else:
         ped_data.dec_x[ped_idx] = act_x
         ped_data.dec_y[ped_idx] = act_y +1
+        
+        
+        
     
     return ped_data 
 
