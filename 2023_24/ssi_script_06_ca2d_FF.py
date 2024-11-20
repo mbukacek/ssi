@@ -127,7 +127,7 @@ def resolve_conflicts(ped_data, const, act_t):
             rep_k = range(const['N_ped']-1)                                     # For all peds
             for k in rep_k:
                 
-                if  (ped_data.dec_x[k] == i) & (ped_data.dec_y[k] == j):        # Check whether they want to enther this cell 
+                if (ped_data.dec_x[k] == i) & (ped_data.dec_y[k] == j):        # Check whether they want to enther this cell 
                     ped_conf = ped_conf + [k]                                   # If so, they are written to waiting list    
             
             if len(ped_conf) > 1:                                               # If waiting room is occupied by more than 2 peds

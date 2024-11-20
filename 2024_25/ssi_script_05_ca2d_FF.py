@@ -38,13 +38,33 @@ def init_ped_data(t,x,y):
 
 def one_ped_decision(ped_data, ped_idx, distance_grid, const):
        
-    # Trivial approach - pedestrian will stay where he is now
-    
+
     act_x = ped_data.x[ped_idx][-1]
     act_y = ped_data.y[ped_idx][-1]
+    
+    # Trivial approach - pedestrian will stay where he is now
+   # ped_data.dec_x[ped_idx] = act_x 
+   # ped_data.dec_y[ped_idx] = act_y
+    
+    # Random approach
+    
+    direction = rn.randint(1, 4)
 
-    ped_data.dec_x[ped_idx] = act_x 
-    ped_data.dec_y[ped_idx] = act_y
+    if direction == 0:                         
+        ped_data.dec_x[ped_idx] = np.nan      # it is already there, but for better immage ..
+        ped_data.dec_y[ped_idx] = np.nan
+    elif direction == 1:
+        ped_data.dec_x[ped_idx] = act_x -1
+        ped_data.dec_y[ped_idx] = act_y
+    elif direction == 2:
+        ped_data.dec_x[ped_idx] = act_x +1
+        ped_data.dec_y[ped_idx] = act_y
+    elif direction == 3 :
+        ped_data.dec_x[ped_idx] = act_x
+        ped_data.dec_y[ped_idx] = act_y -1
+    else:
+        ped_data.dec_x[ped_idx] = act_x
+        ped_data.dec_y[ped_idx] = act_y +1
     
     return ped_data 
 
@@ -63,31 +83,40 @@ def save_step(ped_data, ped_id, new_x, new_y, new_t):
 def resolve_conflicts(ped_data, const, act_t):
     
     print('   Conflict resolution started')
+    
+    rep_x = range(const['grid_size_x'])                                         # For all cells
+    for i in rep_x: 
+        rep_y = range(const['grid_size_y'])
+        for j in rep_y: 
+    
+            ped_conf = []                                                       # Initiate empty "waiting room"
             
-                   # For all cells
+            rep_k = range(const['N_ped']-1)                                     # For all peds
+            for k in rep_k:
+                
+                if (ped_data.dec_x[k] == i) & (ped_data.dec_y[k] == j):        # Check whether they want to enther this cell 
+                    ped_conf = ped_conf + [k]                                   # If so, they are written to waiting list    
             
-                   # Initiate empty "waiting room"
-                    
-                   # For all peds
-                  
-                   # Check whether they want to enther this cell 
-                       # If so, they are written to waiting list    
-                    
-                   # If waiting room is occupied by more than 2 peds
-                       # Pick one randomly to keep his decision
-                               
-                     
-                   # Others will change they mind and stay at their positions
-                          
-                   # Make "stay" step
+            if len(ped_conf) > 1:                                               # If waiting room is occupied by more than 2 peds
+                r = rn.randint(0,len(ped_conf)-1)                               # Pick one randomly to keep his decision
+                       
+                rep_id = range(len(ped_conf))   
+                for p in rep_id:                                                # Others will change they mind and stay at their positions
+                    if p != r:
+                        ped_data = save_step(ped_data, ped_conf[p], ped_data.x[ped_conf[p]][-1], ped_data.y[ped_conf[p]][-1], act_t)  # Make "stay" step
        
-    return ped_data    
+    return ped_data     
 
     
 def cell_guest(ped_data, x, y):
-    # Return id of ped that sit in cell (x,y)
     
     ped_id = np.nan
+
+    rep_k = range(const['N_ped'])                                    
+    for k in rep_k:
+        
+        if (ped_data.x[k][-1] == x) & (ped_data.y[k][-1] == y):
+            ped_id = ped_data.ped_id[k]
     
     return ped_id
    
@@ -99,7 +128,13 @@ def execute_all_steps(ped_data, const, act_t):
     
     print('   Movement started')
 
-    # TO DO ..
+    peds_to_move = ped_data.ped_id[~ped_data.dec_x.isna()]   
+    peds_to_move.reset_index(inplace=True, drop=True)
+ 
+    rep_k = range(len(peds_to_move))                                    # For all peds that may move
+    for k in rep_k:                                                     # Expecting the cell where they want move is empty !!!
+
+        ped_data = save_step(ped_data, peds_to_move[k], ped_data.dec_x[peds_to_move[k]], ped_data.dec_y[peds_to_move[k]], act_t)
             
     return ped_data 
     
