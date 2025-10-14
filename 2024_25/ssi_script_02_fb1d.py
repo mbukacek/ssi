@@ -74,9 +74,6 @@ def update_v(car_data, car_idx, model_name, const):
         new_v = car_data.v[car_idx][-1] + f*const['dt']    
         
         
-        
-        
-        
     else:
         new_v = np.nan
     
