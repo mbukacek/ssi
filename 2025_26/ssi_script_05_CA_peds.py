@@ -18,6 +18,8 @@ def init_ped_data(t, x, y, pocet_chodcu):
                              't': [[t[0]]],                         
                              'x': [[x[0]]],   
                              'y': [[y[0]]], 
+                             'dec_x': np.nan,
+                             'dec_y': np.nan
                                  }
                             , index = [0]
                             )
@@ -28,6 +30,8 @@ def init_ped_data(t, x, y, pocet_chodcu):
                                     't': [[t[i+1]]],                         
                                     'x': [[x[i+1]]],
                                     'y': [[y[i+1]]],
+                                    'dec_x': np.nan,
+                                    'dec_y': np.nan
                                     }, index = [i+1])
             ped_data = pd.concat([ped_data, ped_data_n])
            
@@ -47,10 +51,13 @@ def cell_guest(ped_data, x, y):
     return ped_id
 
     
-def update_positions(ped_data, distance_grid, ped_idx, dec_x, dec_y, t_new, delta_t):    
+def update_positions(ped_data, distance_grid, ped_idx, t_new, delta_t):    
 # provede update pozice a základě minulé pozice a rozhodnutí, pokud je volno. Jinak uloží stávající pozici
 # uloží napočítané hodnoty do polí v car_data
  
+    dec_x = int(ped_data.dec_x[ped_idx])
+    dec_y = int(ped_data.dec_y[ped_idx])
+
     if (pd.isna(cell_guest(ped_data, dec_x, dec_y)) & (distance_grid[dec_x][dec_y] < np.inf)):       # empty and not wall    
         ped_data.at[ped_idx,'x'] = ped_data.x[ped_idx]+[dec_x]
         ped_data.at[ped_idx,'y'] = ped_data.y[ped_idx]+[dec_y]
@@ -59,7 +66,9 @@ def update_positions(ped_data, distance_grid, ped_idx, dec_x, dec_y, t_new, delt
         ped_data.at[ped_idx,'y'] = ped_data.y[ped_idx]+[ped_data.y[ped_idx][-1]]
         
     ped_data.at[ped_idx,'t'] = ped_data.t[ped_idx]+[t_new]
-        
+    
+    ped_data.dec_x[ped_idx] = np.nan
+    ped_data.dec_y[ped_idx] = np.nan   
 
     return ped_data
 
@@ -111,8 +120,41 @@ def ped_make_decision(ped_data, distance_grid, ped_idx, model, const):
     else: 
         dec_x = np.nan
         dec_y = np.nan
+        
+    ped_data.dec_x[ped_idx] = dec_x
+    ped_data.dec_y[ped_idx] = dec_y
     
-    return dec_x, dec_y
+    return ped_data
+
+
+def resolve_conflicts(ped_data, const):
+    
+    print('   Conflict resolution started')
+    
+    rep_x = range(const['grid_size_x'])                                         # For all cells
+    for i in rep_x: 
+        rep_y = range(const['grid_size_y'])
+        for j in rep_y: 
+    
+            ped_conf = []                                                       # Initiate empty "waiting room"
+            
+            rep_k = range(const['N_ped']-1)                                     # For all peds
+            for k in rep_k:
+                
+                if (ped_data.dec_x[k] == i) & (ped_data.dec_y[k] == j):         # Check whether they want to enther this cell 
+                    ped_conf = ped_conf + [k]                                   # If so, they are written to waiting list    
+            
+            if len(ped_conf) > 1:                                               # If waiting room is occupied by more than 2 peds
+                r = rn.randint(0,len(ped_conf)-1)                               # Pick one randomly to keep his decision
+                       
+                rep_id = range(len(ped_conf))   
+                for p in rep_id:                                                # Others will change they mind to stay at their positions
+                    if p != r:
+                        ped_data.dec_x[p] = ped_data.x[p][-1]
+                        ped_data.dec_y[p] = ped_data.y[p][-1]
+                        print('     Ped ' + str(ped_conf[p]) + ' blocked by conflict')
+       
+    return ped_data  
 
 
 #======================#
@@ -160,13 +202,50 @@ plt.ylim(-2, 10)
 
 for k in range(1,doba):
     
-    t_new = k*delta_t    
+    t_new = k*delta_t   
+    print('  Time: ' + str(t_new))
     
+    # Decision:
     for ped_idx in range(pocet_chodcu):
+        ped_data = ped_make_decision(ped_data, distance_grid, ped_idx, 'Atractor', const)
+       
+    # Conflicts:
+    ped_data = resolve_conflicts(ped_data, const)
         
-        dec_x, dec_y = ped_make_decision(ped_data, distance_grid, ped_idx, 'Atractor', const)
         
-        ped_data = update_positions(ped_data, distance_grid, ped_idx, dec_x, dec_y, t_new, delta_t)
+    # Movement:
+    peds_to_move = ped_data.ped_id[~ped_data.dec_x.isna()]                  # Initialy, chance to move is defined as True if at least one ped has decision
+    chance_to_move = len(peds_to_move) > 0
+        
+    while chance_to_move:                                                   # We may need more loops in case of complex blocking situation
+                                                                                # The loop will repeated if there was at least one move in previous one
+        chance_to_move = False          
+        peds_to_move = ped_data.ped_id[~ped_data.dec_x.isna()]   
+        peds_to_move.reset_index(inplace=True, drop=True)
+        
+        rep_k = range(len(peds_to_move))                                    # For all peds that may move
+        for k in rep_k:
+            blocking_ped = cell_guest(ped_data, ped_data.dec_x[peds_to_move[k]], ped_data.dec_y[peds_to_move[k]])   # Who is in his desired cell
+            
+            if blocking_ped == ped_data.ped_id[peds_to_move[k]]:                            # Ped can't block himself
+                blocking_ped = np.nan
+            
+            if pd.isna(blocking_ped):                                                       # Noone is blocking -> move
+                ped_data = update_positions(ped_data, distance_grid, peds_to_move[k], t_new, delta_t)
+                chance_to_move = True
+                print('     Ped ' + str(peds_to_move[k]) + ' moved')
+               
+            elif pd.isna(ped_data.dec_x[blocking_ped]):                                     # Blocking ped that will not move this timestep -> present ped will not move either
+                ped_data.dec_x[k] = ped_data.x[k][-1]
+                ped_data.dec_y[k] = ped_data.y[k][-1]
+                ped_data = update_positions(ped_data, distance_grid, peds_to_move[k], t_new, delta_t)
+                print('     Ped ' + str(peds_to_move[k]) + ' blocked in queue')
+                    
+            else:                                                                           # Blocking ped that may move this timestep -> waiting
+                #chance_to_move = True                                                      # Mutual blok is possible, thus chance to move is not triggered here
+                print('     Ped ' + str(peds_to_move[k]) + ' blocker may move')
+        
+        
 
 
     plt.plot(ped_data.x[0], ped_data.y[0], 'r-o', label = 'ped 1')
@@ -200,24 +279,13 @@ plt.ylim(-2, 10)
 plt.legend()
 plt.show()
 
-
-# Velocity of cars
-plt.figure()
-plt.plot(ped_data.t[0], ped_data.v[0], 'r-', label = 'car 1')
-plt.plot(ped_data.t[1], ped_data.v[1], 'g-', label = 'car 2')
-plt.plot(ped_data.t[2], ped_data.v[2], 'b-', label = 'car 3')
-plt.plot(ped_data.t[3], ped_data.v[3], 'k-', label = 'car 4')
-plt.plot(ped_data.t[4], ped_data.v[4], 'm-', label = 'car 5')
-plt.title('Velocity in time')
-plt.show()
-
 # Timespace fundamental diagram
 plt.figure()
-plt.plot(ped_data.t[0], ped_data.x[0], 'r-', label = 'car 1')
-plt.plot(ped_data.t[1], ped_data.x[1], 'g-', label = 'car 2')
-plt.plot(ped_data.t[2], ped_data.x[2], 'b-', label = 'car 3')
-plt.plot(ped_data.t[3], ped_data.x[3], 'k-', label = 'car 4')
-plt.plot(ped_data.t[4], ped_data.x[4], 'm-', label = 'car 5')
+plt.plot(ped_data.t[0], ped_data.x[0], 'r-', label = 'ped 1')
+plt.plot(ped_data.t[1], ped_data.x[1], 'g-', label = 'ped 2')
+plt.plot(ped_data.t[2], ped_data.x[2], 'b-', label = 'ped 3')
+plt.plot(ped_data.t[3], ped_data.x[3], 'k-', label = 'ped 4')
+plt.plot(ped_data.t[4], ped_data.x[4], 'm-', label = 'ped  5')
 plt.title('Timespace fundamental diagram')
 plt.xlabel(r'$t \,\,\mathrm{[s]}$')
 plt.ylabel(r'$x \,\,\, \mathrm{[m]}$')
