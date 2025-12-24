@@ -15,9 +15,8 @@ def add_ped(ped_data,t):  # přidání chodce (lyžaře) do systému
     
     # generování náhodných pozic chodců
     
-    x_initial = const['R'] + np.random.rand() + max(max(i[-1] for i in ped_data.x),attractors['A1x'])
+    x_initial = 2*const['R'] + np.random.rand() + max(max(i[-1] for i in ped_data.x),attractors['A1x'])
     y_initial = const['R'] + (np.random.rand() * (wall['w2y']-(2*const['R'])))
-    
     
     ped_data_m = pd.DataFrame({'ped_id': idx,
                                't': [[t]],                         
@@ -61,7 +60,7 @@ def init_ped_data(t, x, y, vx, vy, const):   # vytvoření dataframu
             ped_data = pd.concat([ped_data,ped_data_n])     
     return ped_data        
 
-def update_position_and_speed(ped_data, ped_idx, Fx, Fy, t_new, delta_t, T_turniket): # update polohy a rychlosti chodce
+def update_position_and_speed(ped_data, ped_idx, Fx, Fy, t_new, delta_t, T_turniket, wall, barrier): # update polohy a rychlosti chodce
     
     dist = np.sqrt((attractors['Ax']-ped_data.x[ped_idx][-1])**2+(attractors['Ay']-ped_data.y[ped_idx][-1])**2)
     
@@ -79,28 +78,36 @@ def update_position_and_speed(ped_data, ped_idx, Fx, Fy, t_new, delta_t, T_turni
     else:
         ped_data.at[ped_idx,'waiting'] = False
           
-    x_new = ped_data.x[ped_idx][-1] + delta_t*ped_data.vx[ped_idx][-1]
-    y_new = ped_data.y[ped_idx][-1] + delta_t*ped_data.vy[ped_idx][-1]
+    x_new = ped_data.x[ped_idx][-1] + (delta_t*ped_data.vx[ped_idx][-1])
+    y_new = ped_data.y[ped_idx][-1] + (delta_t*ped_data.vy[ped_idx][-1])
     
-    vx_new = ped_data.vx[ped_idx][-1] + delta_t*Fx
-    vy_new = ped_data.vy[ped_idx][-1] + delta_t*Fy
+    vx_new = ped_data.vx[ped_idx][-1] + (delta_t*Fx)
+    vy_new = ped_data.vy[ped_idx][-1] + (delta_t*Fy)
     
     #----------------------hard-core repulsion wall---------------------------#
     
     if x_new < wall['w1x']:
-        x_new = wall['w1x']
+        x_new = wall['w1x']+0.0001
         vx_new = 0 
     if y_new < wall['w1y']:
-        y_new = wall['w1y']
+        y_new = wall['w1y']+0.0001
         vy_new = 0
     if y_new > wall['w2y']:
-        y_new = wall['w2y']
+        y_new = wall['w2y']-0.0001
         vy_new = 0
-    if (x_new < attractors['A1x'] and np.isnan(ped_data.at[ped_idx, 't_in'])):
-        x_new = attractors['A1x']
+    if (x_new < wall['w2x'] and np.isnan(ped_data.at[ped_idx, 't_in'])):
+        x_new = wall['w2x']+0.0001
         vx_new = 0
     
-    
+    if barrier == True and np.isnan(ped_data.at[ped_idx, 't_in']):
+        
+        if y_new < wall['w2y']/2 and ped_data.y[ped_idx][-1] > wall['w2y']/2:
+            y_new = (wall['w2y']/2)+0.0001
+            vy_new = 0
+            
+        if y_new > wall['w2y']/2 and ped_data.y[ped_idx][-1] < wall['w2y']/2:
+            y_new = (wall['w2y']/2)-0.0001
+            vy_new = 0
     
     #-------------------------------------------------------------------------#
     
@@ -112,8 +119,8 @@ def update_position_and_speed(ped_data, ped_idx, Fx, Fy, t_new, delta_t, T_turni
         if (A1 < const['entry_dist'] or A2 < const['entry_dist']): # ověření, zda je chodec v dosahové vzdálenosti turniketů
             ped_data.at[ped_idx,'t_in'] = t_new
             T_turniket = T_turniket + [ped_data.at[ped_idx,'t_in']-ped_data.t[ped_idx][0]]
-            vx_new = 0
-            vy_new = 0
+            #vx_new = 0
+            #vy_new = 0
     
     ped_data.at[ped_idx,'x'] = ped_data.x[ped_idx]+[x_new]
     ped_data.at[ped_idx,'y'] = ped_data.y[ped_idx]+[y_new]
@@ -159,41 +166,100 @@ def agent_interaction_force(ped_data, ped_idx, const): # výpočet vzájemné in
 
     F_Ix = [0]
     F_Iy = [0]
+    
+    if barrier == True:
         
-    for l in ped_data[ped_data.active==True].ped_id:
-            
-        if ped_idx != l:
+        if ped_data.y[ped_idx][-1] < wall['w2y']/2:
+        
+            for l in ped_data[(ped_data.t_in != np.nan and ped_data.active==True) or (ped_data.t_in == np.nan and ped_data.y < wall['w2y']/2)].ped_id:
                 
-            d = np.sqrt((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])**2+(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])**2)
+                if ped_idx != l:
+                    
+                    d = np.sqrt((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])**2+(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])**2)
+                
+                    v = np.sqrt((ped_data.vx[ped_idx][-1])**2+(ped_data.vy[ped_idx][-1])**2)
+                
+                    cosfi = -(ped_data.vx[ped_idx][-1]*(ped_data.x[ped_idx][-1]-ped_data.x[l][-1])+(ped_data.vy[ped_idx][-1]*(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])))/(d*(max(0.00001,v)))
+                    lamb = (const['lambda']+((1-const['lambda'])*((1+cosfi)/2)))
+                
+                    F_Ix = F_Ix + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])/d))]
+                    F_Iy = F_Iy + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.y[ped_idx][-1]-ped_data.y[l][-1])/d))]
+                
+                F_Ix = np.sum(F_Ix)
+                F_Iy = np.sum(F_Iy)
+                
+        if ped_data.y[ped_idx][-1] > wall['w2y']/2:
             
-            v = np.sqrt((ped_data.vx[ped_idx][-1])**2+(ped_data.vy[ped_idx][-1])**2)
+            for l in ped_data[(ped_data.t_in != np.nan and ped_data.active==True) or (ped_data.t_in == np.nan and ped_data.y < wall['w2y']/2)].ped_id:
+                
+                if ped_idx != l:
+                    
+                    d = np.sqrt((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])**2+(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])**2)
+                
+                    v = np.sqrt((ped_data.vx[ped_idx][-1])**2+(ped_data.vy[ped_idx][-1])**2)
+                
+                    cosfi = -(ped_data.vx[ped_idx][-1]*(ped_data.x[ped_idx][-1]-ped_data.x[l][-1])+(ped_data.vy[ped_idx][-1]*(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])))/(d*(max(0.00001,v)))
+                    lamb = (const['lambda']+((1-const['lambda'])*((1+cosfi)/2)))
+                
+                    F_Ix = F_Ix + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])/d))]
+                    F_Iy = F_Iy + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.y[ped_idx][-1]-ped_data.y[l][-1])/d))]
+                
+                F_Ix = np.sum(F_Ix)
+                F_Iy = np.sum(F_Iy)
+        
+    else:
+        
+        for l in ped_data[ped_data.active==True].ped_id:
             
-            #if d < 2:
+            if ped_idx != l:
+                
+                d = np.sqrt((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])**2+(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])**2)
             
-            cosfi = -(ped_data.vx[ped_idx][-1]*(ped_data.x[ped_idx][-1]-ped_data.x[l][-1])+(ped_data.vy[ped_idx][-1]*(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])))/(d*(max(0.00001,v)))
-            lamb = (const['lambda']+(1-const['lambda'])*((1+cosfi)/2))
+                v = np.sqrt((ped_data.vx[ped_idx][-1])**2+(ped_data.vy[ped_idx][-1])**2)
             
-            F_Ix = F_Ix + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])/d))]
-            F_Iy = F_Iy + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.y[ped_idx][-1]-ped_data.y[l][-1])/d))]
+                cosfi = -(ped_data.vx[ped_idx][-1]*(ped_data.x[ped_idx][-1]-ped_data.x[l][-1])+(ped_data.vy[ped_idx][-1]*(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])))/(d*(max(0.00001,v)))
+                lamb = (const['lambda']+((1-const['lambda'])*((1+cosfi)/2)))
             
-    F_Ix = np.sum(F_Ix)
-    F_Iy = np.sum(F_Iy)
+                F_Ix = F_Ix + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])/d))]
+                F_Iy = F_Iy + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.y[ped_idx][-1]-ped_data.y[l][-1])/d))]
+            
+            F_Ix = np.sum(F_Ix)
+            F_Iy = np.sum(F_Iy)
 
     return F_Ix,F_Iy
 
-def wall_repulsion(ped_data, ped_idx, wall, const): # odpudivá síla od zábran koridoru
+def wall_repulsion(ped_data, ped_idx, wall, const, barrier): # odpudivá síla od zábran koridoru
     
-    if np.isnan(ped_data.at[ped_idx,'t_in']):
-        F_Ex = wall['U_0']/wall['xi'] * np.exp((const['R']-(ped_data.x[ped_idx][-1]-wall['w2x']))/wall['xi'])
+    if np.isnan(ped_data.at[ped_idx,'t_in']): #je-li lyžař v prostoru před turnikety
+            
+        F_Ex = wall['U_0x_turn']/wall['xi_x_turn'] * np.exp((const['R']-(ped_data.x[ped_idx][-1]-wall['w2x']))/wall['xi_x_turn'])
+
+        if barrier == True:
         
+            if ped_data.y[ped_idx][-1] > wall['w2y']/2:
+            
+                F_Ey1 = -wall['U_0y']/wall['xi_y'] * np.exp((const['R']-(wall['w2y']-ped_data.y[ped_idx][-1]))/wall['xi_y'])
+            
+                F_Ey = F_Ey1 + (wall['U_0y']/wall['xi_y'] * np.exp((const['R']-(ped_data.y[ped_idx][-1]-wall['w2y']/2))/wall['xi_y']))
+            
+            else:
+                
+                F_Ey1 = -wall['U_0y']/wall['xi_y'] * np.exp((const['R']-((wall['w2y']/2)-ped_data.y[ped_idx][-1]))/wall['xi_y'])
+            
+                F_Ey = F_Ey1 + (wall['U_0y']/wall['xi_y'] * np.exp((const['R']-(ped_data.y[ped_idx][-1]))/wall['xi_y']))
+        else:
+            
+            F_Ey1 = -wall['U_0y']/wall['xi_y'] * np.exp((const['R']-(wall['w2y']-ped_data.y[ped_idx][-1]))/wall['xi_y'])
+        
+            F_Ey = F_Ey1 + (wall['U_0y']/wall['xi_y'] * np.exp((const['R']-ped_data.y[ped_idx][-1])/wall['xi_y']))
+            
     else:
-        F_Ex = wall['U_0']/wall['xi'] * np.exp((const['R']-(ped_data.x[ped_idx][-1]-wall['w1x']))/wall['xi'])
         
-    #if ped_data.y[ped_idx][-1] > wall['w2y']/2:
-    F_Ey1 = -wall['U_0']/wall['xi'] * np.exp((const['R']-(wall['w2y']-ped_data.y[ped_idx][-1]))/wall['xi'])
+        F_Ex = wall['U_0x_lan']/wall['xi_x_lan'] * np.exp((const['R']-(ped_data.x[ped_idx][-1]-wall['w1x']))/wall['xi_x_lan'])  
         
-    #else:
-    F_Ey = F_Ey1 + (wall['U_0']/wall['xi'] * np.exp((const['R']-ped_data.y[ped_idx][-1])/wall['xi']))
+        F_Ey1 = -wall['U_0y']/wall['xi_y'] * np.exp((const['R']-(wall['w2y']-ped_data.y[ped_idx][-1]))/wall['xi_y'])
+        
+        F_Ey = F_Ey1 + (wall['U_0y']/wall['xi_y'] * np.exp((const['R']-ped_data.y[ped_idx][-1])/wall['xi_y']))
 
     return F_Ex, F_Ey
 
@@ -231,24 +297,29 @@ def lanovka(ped_data, t_new, T_lanovka, T_celkovy): # jak jezdí lanovka
 wall = {'w1x':0,
         'w1y':0,
         'w2x':10,
-        'w2y':1.5,
-        'xi':0.1,
-        'U_0':0.25,
+        'w2y':2.0,
+        'xi_x_lan':2.4,
+        'xi_x_turn':2.4,
+        'xi_y':0.1,
+        'U_0x_turn':36,
+        'U_0x_lan':36,
+        'U_0y':(0.1*15*(1-(np.exp(-(0.5/2.4))))*2.4)*np.exp(-0.5/2.4)/2/2.4/(np.exp(-(0.25/0.1))-np.exp(-(1.25/0.1)))
+        #'U_0y':36
         }
 
 #atraktory (turnikety a lanovka)
 attractors = {'A1x':10,
               'A1y':0.5,
               'A2x':10,
-              'A2y':1,
+              'A2y':1.5,
               'Ax':0,
-              'Ay':0.75
+              'Ay':1
               }
 
 #parametry prvního lyžaře
 t = [0]
-x = [attractors['A1x']+0.01]
-y = [attractors['A1y']+0.01]
+x = [attractors['A1x']+1.00]
+y = [attractors['A2y']+0.01]
 vx = [0]
 vy = [0]
 
@@ -256,25 +327,27 @@ T_lanovka = []
 T_turniket = []
 T_celkovy = []
 
+barrier = False
+
 #=====================================================#
 #                      SCRIPT                         #
 #=====================================================#    
 
 for l in range(1): #kolikrát provádíme simulaci
-    const = {'dt':0.05, #časový krok simulace
-             't_max':30, #délka simulace [s]
-             'I_in':0.5, #I_in...průměrný počet nově příchozích agentů za sekundu
+    const = {'dt':0.001, #časový krok simulace
+             't_max':25, #doba simulace [s]
+             'I_in':0.0, #I_in...průměrný počet nově příchozích agentů za sekundu
              'v_opt':3, #optimální rychlost lyžařů
-             'tau':0.25, #škálovací parametr motivační síly
-             'entry_dist':0.1, #dosah čtečky u turniketu
-             'reach_dist':0.75, #dosah lanovky
-             'U_0':0.5, #škálovací parametr interakční síly mezi agenty
-             'xi':0.2, #dosah interakční síly
-             'R':0.3, #poloměr agenta
-             'lambda':0.1, #anizotropní faktor
-             'N_ped_init':4, #počáteční počet čekajících
-             'kapacita':6, #kapacita lanovky
-             'interval':12} #časový interval příjezdu lanovky
+             'tau':0.2, #škálovací parametr motivační síly
+             'entry_dist':0.30, #dosah čtečky u turniketu
+             'reach_dist':2.0, #dosah lanovky
+             'U_0':15*(1-(np.exp(-(0.5/2.4))))*2.4, #škálovací parametr interakční síly mezi agenty
+             'xi':2.4, #dosah interakční síly
+             'R':0.25, #poloměr agenta
+             'lambda':0.00, #anizotropní faktor
+             'N_ped_init':1, #počáteční počet čekajících
+             'kapacita':4, #kapacita lanovky
+             'interval':6} #časový interval příjezdu lanovky
 
     ped_data = init_ped_data(t,x,y,vx,vy,const)
     
@@ -282,7 +355,7 @@ for l in range(1): #kolikrát provádíme simulaci
         
         ped_data = add_ped(ped_data,t[0])
     
-    for k in range(1,int(const['t_max']/const['dt'])):
+    for k in range(1,int(const['t_max']/const['dt'])+1):
     
         t_new = k*const['dt']
         N_new = np.random.poisson(const['I_in']*const['dt']) #vygenerujeme nově příchozí chodce
@@ -290,46 +363,43 @@ for l in range(1): #kolikrát provádíme simulaci
         for s in ped_data[ped_data.active == True].ped_id: # u aktivních lyžařů vypočítáme působící síly a aktualizujeme jeho polohu a rychlost
             F_Mx,F_My = motivation_force(ped_data, s, const)
             F_Ix,F_Iy = agent_interaction_force(ped_data, s, const)
-            F_Ex,F_Ey = wall_repulsion(ped_data, s, wall, const)
+            F_Ex,F_Ey = wall_repulsion(ped_data, s, wall, const, barrier)
             Fx = F_Mx + F_Ix + F_Ex
             Fy = F_My + F_Iy + F_Ey
-            ped_data, T_turniket = update_position_and_speed(ped_data, s, Fx, Fy, t_new, const['dt'], T_turniket)
+            ped_data, T_turniket = update_position_and_speed(ped_data, s, Fx, Fy, t_new, const['dt'], T_turniket, wall, barrier)
     
         for j in range(N_new):
             ped_data = add_ped(ped_data,t_new)
+          
+        if round(t_new,3) % const['interval'] == 0:
+            
+            active = ped_data[ped_data.active==True]
+            for j in active.index:
+                #active = ped_data[ped_data.active==True]
+                #plt.scatter(active.x[j][-1], active.y[j][-1], s=6000)
+                plt.plot(active.x[j], active.y[j])
+                plt.plot(attractors['A1x'], attractors['A1y'], 'r*', label = 'turniket 1')
+                plt.plot(attractors['A2x'], attractors['A2y'], 'r*', label = 'turniket 2')
+                plt.plot(attractors['Ax'], attractors['Ay'], 'r*', label = 'lanovka')
+                plt.ylim(0.00,2.0)
+                plt.xlim(0.00,15.00)
+            plt.show()
     
-        if round(t_new,2) % const['interval'] == 0:
+        if round(t_new,3) % const['interval'] == 0:
             ped_data, T_lanovka, T_celkovy = lanovka(ped_data, t_new, T_lanovka, T_celkovy)
-            
-        # if round(t_new,2) % 0.25 == 0:
-        #     plt.figure()
-        #     active = ped_data[ped_data.active==True].reset_index()
-        #     for j in range(len(active)):
-        #         plt.scatter(active.x[j][-1], active.y[j][-1])
-        #         plt.xlim(0,12)
-        #         plt.ylim(0,1.5)
-            
+                
 #=============================================================================#
 #                               Vizualizace                                   #
 #=============================================================================#
-plt.figure()
-plt.plot(attractors['A1x'], attractors['A1y'], 'r*', label = 'turniket 1')
-plt.plot(attractors['A2x'], attractors['A2y'], 'r*', label = 'turniket 2')
-plt.plot(attractors['Ax'], attractors['Ay'], 'r*', label = 'lanovka')
-for j in range(len(ped_data[ped_data.active==True])):
-    active = ped_data[ped_data.active==True].reset_index()
-    plt.scatter(active.x[j][-1], active.y[j][-1], s=3000)
-    plt.ylim(0.00,1.50)
-    plt.xlim(0.00,1.50)
 
-plt.figure()
-plt.scatter(range(len(T_turniket)),T_turniket)
-plt.show()
+# plt.figure()
+# plt.scatter(range(len(T_turniket)),T_turniket)
+# plt.show()
 
-plt.figure()
-plt.scatter(range(len(T_lanovka)),T_lanovka)
-plt.show()
+# plt.figure()
+# plt.scatter(range(len(T_lanovka)),T_lanovka)
+# plt.show()
 
-plt.figure()
-plt.scatter(range(len(T_celkovy)),T_celkovy)
-plt.show()
+# plt.figure()
+# plt.scatter(range(len(T_celkovy)),T_celkovy)
+# plt.show()
