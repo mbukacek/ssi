@@ -1,0 +1,430 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+pd.options.mode.chained_assignment = None  # default='warn'
+
+#=================================#
+#             FUNKCE              #
+#=================================#   
+
+
+def add_ped(ped_data,t):  # přidání chodce (lyžaře) do systému
+
+    idx = len(ped_data)
+    
+    # generování náhodných pozic chodců
+    
+    x_initial = 2*const['R'] + np.random.rand() + max(max(i[-1] for i in ped_data.x),attractors['A1x'])
+    y_initial = const['R'] + (np.random.rand() * (wall['w2y']-(2*const['R'])))
+    
+    ped_data_m = pd.DataFrame({'ped_id': idx,
+                               't': [[t]],                         
+                               'x': [[x_initial]],
+                               'y': [[y_initial]], 
+                               'vx': [[0]],
+                               'vy': [[0]],
+                               't_in': np.nan,
+                               't_out': np.nan,
+                               'waiting': False,
+                               'active': True
+                               }, index = [idx])
+    ped_data = pd.concat([ped_data,ped_data_m])
+    return ped_data
+
+def init_ped_data(t, x, y, vx, vy, const):   # vytvoření dataframu
+    ped_data = pd.DataFrame({'ped_id': 0,
+                             't': [[t[0]]],                         
+                             'x': [[x[0]]],
+                             'y': [[y[0]]],
+                             'vx': [[vx[0]]],
+                             'vy': [[vy[0]]],
+                             't_in': np.nan,
+                             't_out': np.nan,
+                             'waiting': False,
+                             'active': True
+                             }, index = [0])
+    rep = range(len(x)-1)
+    for i in rep:
+            ped_data_n = pd.DataFrame({'ped_id': i+1,
+                                    't': [[t[i+1]]],                         
+                                    'x': [[x[i+1]]],
+                                    'y': [[y[i+1]]], 
+                                    'vx': [[vx[i+1]]],
+                                    'vy': [[vy[i+1]]],
+                                    't_in': np.nan,
+                                    't_out': np.nan,
+                                    'waiting': False,
+                                    'active': True
+                                    }, index = [i+1])
+            ped_data = pd.concat([ped_data,ped_data_n])     
+    return ped_data        
+
+def update_position_and_speed(ped_data, ped_idx, Fx, Fy, t_new, delta_t, T_turniket, wall, barrier): # update polohy a rychlosti chodce
+    
+    dist = np.sqrt((attractors['Ax']-ped_data.x[ped_idx][-1])**2+(attractors['Ay']-ped_data.y[ped_idx][-1])**2)
+    
+    if dist < const['reach_dist']: # ověření, zda je chodec blízko lanovky
+        #vx_new = 0
+        #vy_new = 0
+        #x_new = ped_data.x[ped_idx][-1]
+        #y_new = ped_data.y[ped_idx][-1]
+        #ped_data.waiting[ped_idx] = True
+        
+        if ped_data.at[ped_idx,'waiting'] == False: # změna statusu lyžaře na čekajícího
+            
+            ped_data.at[ped_idx,'waiting'] = True
+        
+    else:
+        ped_data.at[ped_idx,'waiting'] = False
+          
+    x_new = ped_data.x[ped_idx][-1] + (delta_t*ped_data.vx[ped_idx][-1])
+    y_new = ped_data.y[ped_idx][-1] + (delta_t*ped_data.vy[ped_idx][-1])
+    
+    vx_new = ped_data.vx[ped_idx][-1] + (delta_t*Fx)
+    vy_new = ped_data.vy[ped_idx][-1] + (delta_t*Fy)
+    
+    #----------------------hard-core repulsion wall---------------------------#
+    
+    if x_new < wall['w1x']:
+        x_new = wall['w1x']+0.0001
+        vx_new = 0 
+    if y_new < wall['w1y']:
+        y_new = wall['w1y']+0.0001
+        vy_new = 0
+    if y_new > wall['w2y']:
+        y_new = wall['w2y']-0.0001
+        vy_new = 0
+    if (x_new < wall['w2x'] and np.isnan(ped_data.at[ped_idx, 't_in'])):
+        x_new = wall['w2x']+0.0001
+        vx_new = 0
+    
+    if barrier == True and np.isnan(ped_data.at[ped_idx, 't_in']):
+        
+        if y_new < wall['w2y']/2 and ped_data.y[ped_idx][-1] > wall['w2y']/2:
+            y_new = (wall['w2y']/2)+0.0001
+            vy_new = 0
+            
+        if y_new > wall['w2y']/2 and ped_data.y[ped_idx][-1] < wall['w2y']/2:
+            y_new = (wall['w2y']/2)-0.0001
+            vy_new = 0
+    
+    #-------------------------------------------------------------------------#
+    
+    A1 = np.sqrt((attractors['A1x']-x_new)**2 + (attractors['A1y']-y_new)**2)
+    A2 = np.sqrt((attractors['A2x']-x_new)**2 + (attractors['A2y']-y_new)**2)
+
+    if np.isnan(ped_data.at[ped_idx,'t_in']):
+                    
+        if (A1 < const['entry_dist'] or A2 < const['entry_dist']): # ověření, zda je chodec v dosahové vzdálenosti turniketů
+            ped_data.at[ped_idx,'t_in'] = t_new
+            T_turniket = T_turniket + [ped_data.at[ped_idx,'t_in']-ped_data.t[ped_idx][0]]
+            #vx_new = 0
+            #vy_new = 0
+    
+    ped_data.at[ped_idx,'x'] = ped_data.x[ped_idx]+[x_new]
+    ped_data.at[ped_idx,'y'] = ped_data.y[ped_idx]+[y_new]
+    ped_data.at[ped_idx,'vx'] = ped_data.vx[ped_idx]+[vx_new]
+    ped_data.at[ped_idx,'vy'] = ped_data.vy[ped_idx]+[vy_new]
+    ped_data.at[ped_idx,'t'] = ped_data.t[ped_idx]+[t_new]
+    
+    return ped_data, T_turniket
+
+def motivation_force(ped_data, ped_idx, const): # výpočet přitažlivé síly lyžaře k lanovce
+    
+    if np.isnan(ped_data.at[ped_idx, 't_in']): # je-li lyžař před turnikety
+    #if np.isnan(ped_data.t_in[ped_idx]):
+        A1 = np.sqrt((attractors['A1x']-ped_data.x[ped_idx][-1])**2+(attractors['A1y']-ped_data.y[ped_idx][-1])**2)
+        A2 = np.sqrt((attractors['A2x']-ped_data.x[ped_idx][-1])**2+(attractors['A2y']-ped_data.y[ped_idx][-1])**2)
+    
+        if A1 < A2:
+        
+            sx = (attractors['A1x']-ped_data.x[ped_idx][-1])/A1
+            sy = (attractors['A1y']-ped_data.y[ped_idx][-1])/A1
+    
+        else:
+        
+            sx = (attractors['A2x']-ped_data.x[ped_idx][-1])/A2
+            sy = (attractors['A2y']-ped_data.y[ped_idx][-1])/A2
+            
+        F_Mx = (sx*const['v_opt']-ped_data.vx[ped_idx][-1])/const['tau']
+        F_My = (sy*const['v_opt']-ped_data.vy[ped_idx][-1])/const['tau']
+        
+    else: # je-li lyžař v prostoru mezi turnikety a lanovkou
+        
+        A = np.sqrt((attractors['Ax']-ped_data.x[ped_idx][-1])**2+(attractors['Ay']-ped_data.y[ped_idx][-1])**2)
+        
+        sx = (attractors['Ax']-ped_data.x[ped_idx][-1])/A
+        sy = (attractors['Ay']-ped_data.y[ped_idx][-1])/A
+        
+        F_Mx = (sx*const['v_opt']-ped_data.vx[ped_idx][-1])/const['tau']
+        F_My = (sy*const['v_opt']-ped_data.vy[ped_idx][-1])/const['tau']
+    
+    return F_Mx,F_My
+      
+def agent_interaction_force(ped_data, ped_idx, const): # výpočet vzájemné interakce dvou agentů
+
+    F_Ix = [0]
+    F_Iy = [0]
+    
+    if barrier == True:
+        
+        if ped_data.y[ped_idx][-1] < wall['w2y']/2:
+        
+            for l in ped_data[(ped_data.t_in != np.nan and ped_data.active==True) or (ped_data.t_in == np.nan and ped_data.y < wall['w2y']/2)].ped_id:
+                
+                if ped_idx != l:
+                    
+                    d = np.sqrt((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])**2+(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])**2)
+                
+                    v = np.sqrt((ped_data.vx[ped_idx][-1])**2+(ped_data.vy[ped_idx][-1])**2)
+                
+                    cosfi = -(ped_data.vx[ped_idx][-1]*(ped_data.x[ped_idx][-1]-ped_data.x[l][-1])+(ped_data.vy[ped_idx][-1]*(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])))/(d*(max(0.00001,v)))
+                    lamb = (const['lambda']+((1-const['lambda'])*((1+cosfi)/2)))
+                
+                    F_Ix = F_Ix + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])/d))]
+                    F_Iy = F_Iy + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.y[ped_idx][-1]-ped_data.y[l][-1])/d))]
+                
+                F_Ix = np.sum(F_Ix)
+                F_Iy = np.sum(F_Iy)
+                
+        if ped_data.y[ped_idx][-1] > wall['w2y']/2:
+            
+            for l in ped_data[(ped_data.t_in != np.nan and ped_data.active==True) or (ped_data.t_in == np.nan and ped_data.y < wall['w2y']/2)].ped_id:
+                
+                if ped_idx != l:
+                    
+                    d = np.sqrt((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])**2+(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])**2)
+                
+                    v = np.sqrt((ped_data.vx[ped_idx][-1])**2+(ped_data.vy[ped_idx][-1])**2)
+                
+                    cosfi = -(ped_data.vx[ped_idx][-1]*(ped_data.x[ped_idx][-1]-ped_data.x[l][-1])+(ped_data.vy[ped_idx][-1]*(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])))/(d*(max(0.00001,v)))
+                    lamb = (const['lambda']+((1-const['lambda'])*((1+cosfi)/2)))
+                
+                    F_Ix = F_Ix + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])/d))]
+                    F_Iy = F_Iy + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.y[ped_idx][-1]-ped_data.y[l][-1])/d))]
+                
+                F_Ix = np.sum(F_Ix)
+                F_Iy = np.sum(F_Iy)
+        
+    else:
+        
+        for l in ped_data[ped_data.active==True].ped_id:
+            
+            if ped_idx != l:
+                
+                d = np.sqrt((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])**2+(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])**2)
+            
+                v = np.sqrt((ped_data.vx[ped_idx][-1])**2+(ped_data.vy[ped_idx][-1])**2)
+            
+                cosfi = -(ped_data.vx[ped_idx][-1]*(ped_data.x[ped_idx][-1]-ped_data.x[l][-1])+(ped_data.vy[ped_idx][-1]*(ped_data.y[ped_idx][-1]-ped_data.y[l][-1])))/(d*(max(0.00001,v)))
+                lamb = (const['lambda']+((1-const['lambda'])*((1+cosfi)/2)))
+            
+                F_Ix = F_Ix + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.x[ped_idx][-1]-ped_data.x[l][-1])/d))]
+                F_Iy = F_Iy + [lamb*((const['U_0']/const['xi'])*np.exp(((2*const['R'])-d)/const['xi'])*((ped_data.y[ped_idx][-1]-ped_data.y[l][-1])/d))]
+            
+            F_Ix = np.sum(F_Ix)
+            F_Iy = np.sum(F_Iy)
+
+    return F_Ix,F_Iy
+
+def wall_repulsion(ped_data, ped_idx, wall, const, barrier): # odpudivá síla od zábran koridoru
+    
+    if np.isnan(ped_data.at[ped_idx,'t_in']): #je-li lyžař v prostoru před turnikety
+            
+        F_Ex = wall['U_0x_turn']/wall['xi_x_turn'] * np.exp((const['R']-(ped_data.x[ped_idx][-1]-wall['w2x']))/wall['xi_x_turn'])
+
+        if barrier == True:
+        
+            if ped_data.y[ped_idx][-1] > wall['w2y']/2:
+            
+                F_Ey1 = -wall['U_0y']/wall['xi_y'] * np.exp((const['R']-(wall['w2y']-ped_data.y[ped_idx][-1]))/wall['xi_y'])
+            
+                F_Ey = F_Ey1 + (wall['U_0y']/wall['xi_y'] * np.exp((const['R']-(ped_data.y[ped_idx][-1]-wall['w2y']/2))/wall['xi_y']))
+            
+            else:
+                
+                F_Ey1 = -wall['U_0y']/wall['xi_y'] * np.exp((const['R']-((wall['w2y']/2)-ped_data.y[ped_idx][-1]))/wall['xi_y'])
+            
+                F_Ey = F_Ey1 + (wall['U_0y']/wall['xi_y'] * np.exp((const['R']-(ped_data.y[ped_idx][-1]))/wall['xi_y']))
+        else:
+            
+            F_Ey1 = -wall['U_0y']/wall['xi_y'] * np.exp((const['R']-(wall['w2y']-ped_data.y[ped_idx][-1]))/wall['xi_y'])
+        
+            F_Ey = F_Ey1 + (wall['U_0y']/wall['xi_y'] * np.exp((const['R']-ped_data.y[ped_idx][-1])/wall['xi_y']))
+            
+    else:
+        
+        F_Ex = wall['U_0x_lan']/wall['xi_x_lan'] * np.exp((const['R']-(ped_data.x[ped_idx][-1]-wall['w1x']))/wall['xi_x_lan'])  
+        
+        F_Ey1 = -wall['U_0y']/wall['xi_y'] * np.exp((const['R']-(wall['w2y']-ped_data.y[ped_idx][-1]))/wall['xi_y'])
+        
+        F_Ey = F_Ey1 + (wall['U_0y']/wall['xi_y'] * np.exp((const['R']-ped_data.y[ped_idx][-1])/wall['xi_y']))
+
+    return F_Ex, F_Ey
+
+def lanovka(ped_data, t_new, T_lanovka, T_celkovy): # jak jezdí lanovka
+    
+    if len(ped_data[ped_data.waiting == True]) <= const['kapacita']: 
+        for h in ped_data[ped_data.waiting == True].ped_id:
+            ped_data.at[h,'t_out'] = t_new
+            ped_data.at[h,'waiting'] = False
+            ped_data.at[h,'active'] = False
+            
+            T_lanovka = T_lanovka + [ped_data.at[h, 't_out']-ped_data.at[h, 't_in']] 
+            T_celkovy = T_celkovy + [ped_data.at[h, 't_out']-ped_data.t[h][0]]
+            
+    else:
+        
+        while len(ped_data[ped_data.t_out == t_new]) < const['kapacita']: #nabírá lyžaře v blízkosti lanovky, dokud není naplněna kapacita
+            h = min(ped_data[ped_data.waiting == True].ped_id)
+            
+            ped_data.at[h,'t_out'] = t_new
+            ped_data.at[h,'waiting'] = False
+            ped_data.at[h,'active'] = False
+            
+            T_lanovka = T_lanovka + [ped_data.at[h, 't_out']-ped_data.at[h, 't_in']]
+            T_celkovy = T_celkovy + [ped_data.at[h, 't_out']-ped_data.t[h][0]]
+    
+    return ped_data, T_lanovka, T_celkovy
+    
+
+#=============================#
+#          PARAMETRY          #
+#=============================#
+
+#geometrie systému (koridor)
+wall = {'w1x':0,
+        'w1y':0,
+        'w2x':10,
+        'w2y':2.0,
+        'xi_x_lan':2.4,
+        'xi_x_turn':2.4,
+        'xi_y':0.1,
+        'U_0x_turn':36,
+        'U_0x_lan':36,
+        'U_0y':(0.1*15*(1-(np.exp(-(0.5/2.4))))*2.4)*np.exp(-0.5/2.4)/2/2.4/(np.exp(-(0.25/0.1))-np.exp(-(1.25/0.1)))
+        #'U_0y':36
+        }
+
+#atraktory (turnikety a lanovka)
+attractors = {'A1x':10,
+              'A1y':0.5,
+              'A2x':10,
+              'A2y':1.5,
+              'Ax':0,
+              'Ay':1
+              }
+
+#parametry prvního lyžaře
+t = [0]
+x = [attractors['A1x']+1.00]
+y = [attractors['A2y']+0.01]
+vx = [0]
+vy = [0]
+
+T_lanovka = []
+T_turniket = []
+T_celkovy = []
+
+barrier = False
+
+const = {
+         'v_opt':3,                                     #optimální rychlost lyžařů
+         'tau':0.2,                                     #škálovací parametr motivační síly
+         'entry_dist':0.30,                             #dosah čtečky u turniketu
+         'reach_dist':2.0,                              #dosah lanovky
+         'U_0':15*(1-(np.exp(-(0.5/2.4))))*2.4,         #škálovací parametr interakční síly mezi agenty
+         'xi':2.4,                                      #dosah interakční síly
+         'R':0.25,                                      #poloměr agenta
+         'lambda':0.00,                                 #anizotropní faktor
+         'dt':0.1,                                      #časový krok simulace
+         't_max':100,                                   #doba simulace [s]
+         'N_ped_init':5,                                #počáteční počet čekajících
+         'I_in':0.5,                                    #I_in...průměrný počet nově příchozích agentů za sekundu
+         'kapacita':4,                                  #kapacita lanovky
+         'interval':10}                                 #časový interval příjezdu lanovky
+
+n_round = 5
+interval_set = [4, 6, 7, 8, 9, 10, 11, 12]
+N_ped_end = np.full((n_round, len(interval_set)), np.nan)
+
+
+#=====================================================#
+#                      SCRIPT                         #
+#=====================================================#    
+
+
+for m in range(len(interval_set)):
+    
+    const['interval'] = interval_set[m]
+    
+    for l in range(n_round): #kolikrát provádíme simulaci
+
+        print('param set ' + str(m+1) + ', round ' + str(l+1) + ' started')
+        ped_data = init_ped_data(t,x,y,vx,vy,const)
+    
+        for i in range(const['N_ped_init']-1):
+        
+            ped_data = add_ped(ped_data,t[0])
+    
+        for k in range(1,int(const['t_max']/const['dt'])+1):
+               
+            t_new = k*const['dt']
+            if round(t_new,3) % 10 == 0:
+                print('   time: ' + str(t_new))
+            
+            N_new = np.random.poisson(const['I_in']*const['dt']) #vygenerujeme nově příchozí chodce
+    
+            for s in ped_data[ped_data.active == True].ped_id: # u aktivních lyžařů vypočítáme působící síly a aktualizujeme jeho polohu a rychlost
+                F_Mx,F_My = motivation_force(ped_data, s, const)
+                F_Ix,F_Iy = agent_interaction_force(ped_data, s, const)
+                F_Ex,F_Ey = wall_repulsion(ped_data, s, wall, const, barrier)
+                Fx = F_Mx + F_Ix + F_Ex
+                Fy = F_My + F_Iy + F_Ey
+                ped_data, T_turniket = update_position_and_speed(ped_data, s, Fx, Fy, t_new, const['dt'], T_turniket, wall, barrier)
+    
+            for j in range(N_new):
+                ped_data = add_ped(ped_data,t_new)
+    
+            if round(t_new,3) % const['interval'] == 0:
+                ped_data, T_lanovka, T_celkovy = lanovka(ped_data, t_new, T_lanovka, T_celkovy)
+                
+        N_ped_end[l][m] = sum(ped_data.active)  
+                
+#=============================================================================#
+#                               Vizualizace                                   #
+#=============================================================================#
+
+plt.figure()
+plt.boxplot(N_ped_end)
+plt.xticks(
+    ticks = range(1, len(interval_set) + 1),
+    labels = interval_set)
+plt.xlabel('Interval lanovky [s]')
+plt.ylabel('Pocet aktivnich osob na konci [1]')
+
+
+plt.figure()
+for j in ped_data.index:
+    plt.plot(ped_data.x[j], ped_data.y[j])
+
+plt.plot(attractors['A1x'], attractors['A1y'], 'r*', label = 'turniket 1')
+plt.plot(attractors['A2x'], attractors['A2y'], 'r*', label = 'turniket 2')
+plt.plot(attractors['Ax'], attractors['Ay'], 'r*', label = 'lanovka')
+plt.ylim(0.00,2.0)
+plt.xlim(0.00,15.00)
+plt.show()
+
+
+# plt.figure()
+# plt.scatter(range(len(T_turniket)),T_turniket)
+# plt.show()
+
+# plt.figure()
+# plt.scatter(range(len(T_lanovka)),T_lanovka)
+# plt.show()
+
+# plt.figure()
+# plt.scatter(range(len(T_celkovy)),T_celkovy)
+# plt.show()
